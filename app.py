@@ -32,39 +32,37 @@ def handle_move(data):
     pyautogui.moveRel(dx, dy)
 
 @socketio.on("click")
-def handle_click():
-    pyautogui.click()
+def handle_click(data=None):  # Modified to accept optional parameter
+    if data and data.get('double', False):
+        pyautogui.doubleClick()
+    else:
+        pyautogui.click()
 
 @socketio.on("keypress")
 def handle_keypress(data):
     key = data.get("key")
     if key == "backspace":
         keyboard.send("backspace")
+    elif key == "enter":
+        keyboard.send("enter")
     elif key:
         keyboard.write(key)
 
-# === QR Code generation in terminal using ngrok URL ===
-import qrcode
-
+# === QR Code generation ===
 def display_qr(public_url):
     url = f"{public_url}?token={ACCESS_TOKEN}"
-
-    # 1. Create the QR code
     qr = qrcode.QRCode(border=1)
     qr.add_data(url)
     qr.make(fit=True)
-
-    # 2. Render QR in terminal
+    
     try:
-        qr.print_ascii(invert=True)  # or qr.print_tty() if ASCII fails
+        qr.print_ascii(invert=True)
     except Exception as e:
         print("❌ QR print failed:", e)
         print("✅ URL instead:", url)
 
-
-# === Start the app with ngrok ===
+# === Start the app ===
 if __name__ == "__main__":
-    # Start ngrok tunnel on port 5000
     public_url = ngrok.connect(5000, bind_tls=True)
     print("Scan this QR on your mobile phone to access the app:\n")
     display_qr(public_url.public_url)
