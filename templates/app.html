@@ -3,7 +3,7 @@
 
 <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
     <title>Remote Pad</title>
     <script src="https://cdn.jsdelivr.net/npm/socket.io-client@4.5.4/dist/socket.io.min.js"></script>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" />
@@ -11,16 +11,16 @@
         * {
             user-select: none;
             -webkit-user-select: none;
-            /* For Safari */
             -ms-user-select: none;
-            /* For IE/Edge */
+            touch-action: manipulation;
+            box-sizing: border-box;
         }
 
-        html,
-        body {
+        html, body {
             height: 100%;
             margin: 0;
             padding: 0;
+            overflow: hidden;
         }
 
         body {
@@ -29,16 +29,13 @@
             font-family: 'Segoe UI', sans-serif;
             display: flex;
             flex-direction: column;
-            min-height: 100vh;
-            user-select: none;
-            /* prevent highlighting */
-            -webkit-user-select: none;
-            -ms-user-select: none;
-            box-sizing: border-box;
+            height: 100vh;
+            width: 100vw;
         }
 
         #pad {
             flex: 1;
+            min-height: 0; /* Allows flex item to shrink below content size */
             background-color: #222;
             touch-action: none;
         }
@@ -51,8 +48,9 @@
         }
 
         .controls {
-            padding: 1rem;
+            padding: 0.75rem;
             background-color: #111;
+            flex-shrink: 0; /* Prevent controls from shrinking */
         }
 
         .btn-toggle {
@@ -60,7 +58,8 @@
             color: white;
             border: none;
             font-weight: 500;
-            font-size: 1.1rem;
+            font-size: 1rem;
+            padding: 0.5rem;
         }
 
         .btn-toggle:active {
@@ -68,19 +67,23 @@
         }
 
         .form-label {
-            margin-bottom: 0.5rem;
+            margin-bottom: 0.25rem;
+            font-size: 0.9rem;
         }
 
         .form-range {
             accent-color: #0d6efd;
+            width: 100%;
+            margin: 0;
+            padding: 0;
         }
 
         .status-indicator {
-            width: 10px;
-            height: 10px;
+            width: 8px;
+            height: 8px;
             border-radius: 50%;
             display: inline-block;
-            margin-right: 8px;
+            margin-right: 6px;
         }
 
         .status-connected {
@@ -94,30 +97,41 @@
         .connection-status {
             display: flex;
             align-items: center;
-            margin-bottom: 0.5rem;
+            margin-bottom: 0.25rem;
+            font-size: 0.9rem;
+        }
+
+        .controls-container {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
         }
 
         @media (max-width: 576px) {
+            .controls {
+                padding: 0.5rem;
+            }
             .btn-toggle {
-                font-size: 1rem;
+                font-size: 0.9rem;
+                padding: 0.4rem;
             }
         }
     </style>
 </head>
 
 <body>
-
     <div id="pad" class="w-100"></div>
 
     <div class="controls">
-        <div class="connection-status">
-            <span class="status-indicator status-disconnected" id="status-indicator"></span>
-            <span id="status-text">Disconnected</span>
+        <div class="controls-container">
+            <div class="connection-status">
+                <span class="status-indicator status-disconnected" id="status-indicator"></span>
+                <span id="status-text">Disconnected</span>
+            </div>
+            <label for="sensitivity-range" class="form-label text-white">Sensitivity</label>
+            <input type="range" class="form-range" min="1" max="10" value="3" id="sensitivity-range">
+            <button id="keyboard-toggle" class="btn btn-toggle w-100">Keyboard</button>
         </div>
-        <label for="sensitivity-range" class="form-label text-white">Sensitivity</label>
-        <input type="range" class="form-range" min="1" max="10" value="3" id="sensitivity-range">
-
-        <button id="keyboard-toggle" class="btn btn-toggle w-100 mt-3">Open Keyboard</button>
         <input id="hiddenInput" type="text" autofocus />
     </div>
 
@@ -129,9 +143,18 @@
         const statusIndicator = document.getElementById("status-indicator");
         const statusText = document.getElementById("status-text");
 
+        // Prevent any default touch behaviors that might cause scrolling
+        document.addEventListener('touchmove', function(e) {
+            if (e.target === pad || e.target === document.body) {
+                e.preventDefault();
+            }
+        }, { passive: false });
+
         let lastX = null;
         let lastY = null;
         let mouseDown = false;
+        let touchStartTime = 0;
+        let clickTimeout = null;
 
         // Connection status handlers
         socket.on("connect", () => {
@@ -149,7 +172,16 @@
         const getSensitivity = () => parseFloat(sensitivitySlider.value);
 
         // === Touch events ===
+        pad.addEventListener("touchstart", (e) => {
+            e.preventDefault();
+            const touch = e.touches[0];
+            lastX = touch.clientX;
+            lastY = touch.clientY;
+            touchStartTime = Date.now();
+        });
+
         pad.addEventListener("touchmove", (e) => {
+            e.preventDefault();
             const touch = e.touches[0];
             if (lastX !== null && lastY !== null) {
                 const dx = (touch.clientX - lastX) * getSensitivity();
@@ -160,19 +192,36 @@
             lastY = touch.clientY;
         });
 
-        pad.addEventListener("touchend", () => {
+        pad.addEventListener("touchend", (e) => {
+            e.preventDefault();
+            // Detect quick tap for click
+            if (Date.now() - touchStartTime < 200) {
+                if (clickTimeout) {
+                    clearTimeout(clickTimeout);
+                    clickTimeout = null;
+                    socket.emit("click", { double: true });
+                } else {
+                    clickTimeout = setTimeout(() => {
+                        clickTimeout = null;
+                        socket.emit("click", { double: false });
+                    }, 200);
+                }
+            }
             lastX = null;
             lastY = null;
         });
 
-        // === Optional Mouse (for desktop testing) ===
+        // === Mouse events (for desktop testing) ===
         pad.addEventListener("mousedown", (e) => {
+            e.preventDefault();
             mouseDown = true;
             lastX = e.clientX;
             lastY = e.clientY;
+            touchStartTime = Date.now();
         });
 
         pad.addEventListener("mousemove", (e) => {
+            e.preventDefault();
             if (!mouseDown) return;
             const dx = (e.clientX - lastX) * getSensitivity();
             const dy = (e.clientY - lastY) * getSensitivity();
@@ -181,15 +230,19 @@
             lastY = e.clientY;
         });
 
-        pad.addEventListener("mouseup", () => {
+        pad.addEventListener("mouseup", (e) => {
+            e.preventDefault();
+            if (Date.now() - touchStartTime < 200) {
+                socket.emit("click", { double: false });
+            }
             mouseDown = false;
             lastX = null;
             lastY = null;
-            socket.emit("click");
         });
 
         // === Keyboard input ===
-        document.getElementById("keyboard-toggle").addEventListener("click", () => {
+        document.getElementById("keyboard-toggle").addEventListener("click", (e) => {
+            e.preventDefault();
             input.focus();
         });
 
@@ -197,13 +250,22 @@
             e.preventDefault();
             if (e.key === "Backspace") {
                 socket.emit("keypress", { key: "backspace" });
+            } else if (e.key === "Enter") {
+                socket.emit("keypress", { key: "enter" });
             } else if (e.key.length === 1) {
                 socket.emit("keypress", { key: e.key });
             }
             input.value = '';
         });
+
+        // Handle window resize to ensure no scrolling
+        function handleResize() {
+            document.body.style.height = window.innerHeight + 'px';
+            document.body.style.width = window.innerWidth + 'px';
+        }
+        
+        window.addEventListener('resize', handleResize);
+        handleResize();
     </script>
-
 </body>
-
 </html>

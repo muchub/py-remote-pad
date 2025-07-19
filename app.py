@@ -4,12 +4,17 @@ import pyautogui
 import keyboard
 import qrcode
 from pyngrok import ngrok
-import os
+import secrets
+import string
+
+def generate_token(length=8):
+    characters = string.ascii_letters + string.digits
+    return ''.join(secrets.choice(characters) for _ in range(length))
 
 # === Configuration ===
 app = Flask(__name__)
 socketio = SocketIO(app, cors_allowed_origins='*', async_mode='threading')
-ACCESS_TOKEN = "auisbdu123"
+ACCESS_TOKEN = generate_token()
 
 # === Routes ===
 @app.route('/')
